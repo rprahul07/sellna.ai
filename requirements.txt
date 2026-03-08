@@ -1,0 +1,60 @@
+# ============================================================
+# Sellna.ai — Sales Agentic AI
+# Unified requirements for the entire project
+# ============================================================
+
+# --- Web Framework ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# --- Async / Config ---
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+
+# --- Database ---
+sqlalchemy>=2.0.30
+asyncpg>=0.29.0
+aiosqlite>=0.20.0        # used by test suite (SQLite async)
+alembic>=1.13.0
+
+# --- Vector Store ---
+qdrant-client>=1.9.0
+faiss-cpu>=1.8.0
+
+# --- LLM / Embeddings ---
+openai>=1.30.0
+sentence-transformers>=2.7.0
+
+# --- Scraping (existing module) ---
+httpx[http2]>=0.27.0
+beautifulsoup4>=4.12.0
+lxml>=5.2.0
+playwright>=1.44.0
+playwright-stealth>=1.0.6
+brotli>=1.1.0
+
+# --- Security / Auth ---
+python-jose[cryptography]>=3.3.0
+
+# --- Logging ---
+structlog>=24.1.0
+colorama>=0.4.6
+
+# --- Task Queue ---
+redis>=5.0.4
+celery>=5.4.0
+flower>=2.0.1              # Celery monitoring UI (http://localhost:5555)
+
+# --- Observability (optional) ---
+prometheus-fastapi-instrumentator>=7.0.0
+
+# --- Export ---
+openpyxl>=3.1.0
+jinja2>=3.1.0
+
+# --- Testing ---
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+anyio>=4.3.0
