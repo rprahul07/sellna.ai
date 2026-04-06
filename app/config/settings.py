@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -78,9 +78,9 @@ class Settings(BaseSettings):
     faiss_index_path: str = "./data/faiss_index"
 
     # ------------------------------------------------------------------
-    # LLM Provider — switch between openai | grok | ollama | custom
+    # LLM Provider — switch between openai | grok | groq | ollama | custom
     # ------------------------------------------------------------------
-    llm_provider: Literal["openai", "grok", "ollama", "custom"] = "ollama"
+    llm_provider: Literal["openai", "grok", "groq", "ollama", "custom"] = "groq"
 
     # --- xAI / Grok ---
     grok_api_key: str = Field(default="", description="xAI API key (format: xai-...)")
@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434/v1"
     ollama_model: str = "llama3"
     ollama_api_key: str = "ollama"   # Ollama ignores this but SDK requires it
+
+    # --- Groq (set llm_provider=groq) ---
+    groq_api_key: str = Field(default="", description="Groq API key (format: gsk_...)")
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_model: str = "llama-3.3-70b-versatile"  # fast + capable; alt: mixtral-8x7b-32768
 
     # --- Custom / Any other OpenAI-compatible endpoint ---
     custom_base_url: str = ""
@@ -113,6 +118,7 @@ class Settings(BaseSettings):
             "grok": self.grok_model,
             "openai": self.openai_model,
             "ollama": self.ollama_model,
+            "groq": self.groq_model,
             "custom": self.custom_model,
         }[self.llm_provider]
 
@@ -123,6 +129,7 @@ class Settings(BaseSettings):
             "grok": self.grok_base_url,
             "openai": self.openai_base_url,
             "ollama": self.ollama_base_url,
+            "groq": self.groq_base_url,
             "custom": self.custom_base_url,
         }[self.llm_provider]
 
@@ -133,8 +140,26 @@ class Settings(BaseSettings):
             "grok": self.grok_api_key,
             "openai": self.openai_api_key,
             "ollama": self.ollama_api_key,
+            "groq": self.groq_api_key,
             "custom": self.custom_api_key,
         }[self.llm_provider]
+
+    @model_validator(mode="after")
+    def validate_active_provider_key(self) -> Settings:
+        """Enforce that the currently selected LLM provider has a required API key."""
+        # Ollama is local, doesn't need a real key.
+        if self.llm_provider == "ollama":
+            return self
+            
+        key = self.llm_api_key
+        # Check if empty or still the default example string
+        if not key or "YOUR_" in key.upper():
+            raise ValueError(
+                f"Missing or invalid API key for active provider '{self.llm_provider}'. "
+                f"Please update {self.llm_provider.upper()}_API_KEY in your .env file."
+            )
+        return self
+        
 
     # ------------------------------------------------------------------
     # Embeddings
@@ -149,8 +174,8 @@ class Settings(BaseSettings):
 
     @property
     def active_embedding_backend(self) -> str:
-        """Force sentence_transformers when using Grok (no embedding API)."""
-        if self.llm_provider == "grok" and self.embedding_backend == "openai":
+        """Force sentence_transformers when using Grok/Groq (no embedding API)."""
+        if self.llm_provider in ("grok", "groq") and self.embedding_backend == "openai":
             return "sentence_transformers"
         return self.embedding_backend
 

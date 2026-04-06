@@ -1,6 +1,7 @@
 """LLM Service — pluggable provider-aware async client.
 
 Supports:
+  - Groq          → LLM_PROVIDER=groq    + GROQ_API_KEY=gsk_...
   - Grok (xAI)    → LLM_PROVIDER=grok    + GROK_API_KEY=xai-...
   - OpenAI        → LLM_PROVIDER=openai  + OPENAI_API_KEY=sk-...
   - Ollama        → LLM_PROVIDER=ollama  (no key needed)
@@ -66,9 +67,9 @@ class LLMService:
             "top_p": 0.8,
         }
 
-        # JSON mode handling — Ollama supports it via the API BUT requires the
-        # system prompt to explicitly ask for JSON too (belt-and-suspenders).
-        # For openai/grok we use the native response_format parameter.
+        # JSON mode handling:
+        #  - ollama  → inject prompt instruction + response_format
+        #  - groq / openai / grok → native response_format param
         if json_mode:
             if self._provider == "ollama":
                 # Inject a JSON instruction at the top of the system message

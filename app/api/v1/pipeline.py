@@ -46,64 +46,98 @@ async def run_pipeline_async(
     num_icps: int = 3,
     num_personas_per_icp: int = 2,
 ) -> dict:
-    """Enqueues the pipeline — falls back to BackgroundTasks if Celery fails."""
+    """Enqueues the pipeline — falls back to BackgroundTasks if no Celery worker is available."""
     job_id = str(uuid.uuid4())
-    
-    # Check if Celery is up, else fallback
-    try:
-        from app.workers.tasks import run_pipeline_task
-        task = run_pipeline_task.apply_async(
-            kwargs=dict(
-                company_input_dict=payload.model_dump(mode="json"),
-                render_js=render_js,
-                num_icps=num_icps,
-                num_personas_per_icp=num_personas_per_icp,
-            )
-        )
-        job_id = task.id
-        logger.info("api.pipeline.queued", company=payload.company_name, job_id=job_id)
-    except Exception as exc:
-        logger.warning(f"Celery unavailable ({exc}), falling back to in-memory BackgroundTasks.")
-        
-        # Setup local job state
-        _LOCAL_JOBS[job_id] = {
-            "state": "RUNNING",
-            "progress": 5,
-            "status": "Starting pipeline...",
-            "result": None,
-            "error": None
-        }
 
-        # The local background executor
-        async def background_runner(jid: str, data: CompanyInput):
-            # Must run inside an async context with its own DB session
-            try:
-                from app.pipelines.sales_pipeline import SalesPipeline
-                from app.db.postgres import get_db, async_session_maker
-                
-                async with async_session_maker() as session:
-                    _LOCAL_JOBS[jid]["status"] = "Processing stages..."
-                    pipeline = SalesPipeline(
-                        db=session,
-                        render_js=render_js,
-                        num_icps=num_icps,
-                        num_personas_per_icp=num_personas_per_icp,
-                    )
-                    res = await pipeline.run(data)
-                    await session.commit()
-                    
-                    _LOCAL_JOBS[jid]["state"] = "SUCCESS"
-                    _LOCAL_JOBS[jid]["progress"] = 100
-                    _LOCAL_JOBS[jid]["result"] = res.to_dict()
-                    _LOCAL_JOBS[jid]["status"] = "Done"
-            except Exception as e:
-                _LOCAL_JOBS[jid]["state"] = "FAILURE"
-                _LOCAL_JOBS[jid]["error"] = str(e)
-                _LOCAL_JOBS[jid]["status"] = "Failed"
-                logger.error(f"Fallback pipeline failed: {e}")
-                
-        # Fire background task
-        background_tasks.add_task(background_runner, job_id, payload)
+    # Check if a live Celery WORKER is available (not just a reachable broker).
+    # apply_async succeeds even with no workers — tasks just queue forever.
+    _celery_worker_available = False
+    try:
+        from app.workers.celery_app import celery_app as _celery_app
+        # inspect().ping() returns {worker_id: {"ok": "pong"}} for each live worker.
+        # timeout=1 so we don't block the request more than 1 second.
+        active = _celery_app.control.inspect(timeout=1).ping() or {}
+        _celery_worker_available = bool(active)
+    except Exception:
+        _celery_worker_available = False
+
+    # Use Celery only when a worker is alive, otherwise use BackgroundTasks fallback
+    if _celery_worker_available:
+        try:
+            from app.workers.tasks import run_pipeline_task
+            task = run_pipeline_task.apply_async(
+                kwargs=dict(
+                    company_input_dict=payload.model_dump(mode="json"),
+                    render_js=render_js,
+                    num_icps=num_icps,
+                    num_personas_per_icp=num_personas_per_icp,
+                )
+            )
+            job_id = task.id
+            logger.info("api.pipeline.queued", company=payload.company_name, job_id=job_id)
+            return {
+                "job_id": job_id,
+                "status": "queued",
+                "company": payload.company_name,
+                "poll_url": f"/api/v1/pipeline/status/{job_id}",
+                "message": "Pipeline submitted. Poll poll_url for updates.",
+            }
+        except Exception as exc:
+            logger.warning(f"Celery task dispatch failed ({exc}), falling back.")
+
+    logger.warning("No Celery worker detected — using in-memory BackgroundTasks fallback.")
+
+    # Register the job BEFORE firing the background task (prevents race condition)
+    _LOCAL_JOBS[job_id] = {
+        "state": "RUNNING",
+        "progress": 2,
+        "status_msg": "Starting pipeline...",
+        "result": None,
+        "error": None,
+        "company_id": None,
+    }
+
+    # Progress callback — updates the shared job dict so polling works
+    def make_progress_cb(jid: str):
+        def on_progress(status: str, progress: int, company_id: str | None = None):
+            _LOCAL_JOBS[jid]["status_msg"] = status
+            _LOCAL_JOBS[jid]["progress"] = progress
+            if company_id:
+                _LOCAL_JOBS[jid]["company_id"] = company_id
+        return on_progress
+
+    # The local background executor
+    async def background_runner(jid: str, data: CompanyInput):
+        try:
+            from app.pipelines.sales_pipeline import SalesPipeline
+            from app.db.postgres import async_session_factory
+
+            async with async_session_factory() as session:
+                _LOCAL_JOBS[jid]["status_msg"] = "Processing stages..."
+                pipeline = SalesPipeline(
+                    db=session,
+                    render_js=render_js,
+                    num_icps=num_icps,
+                    num_personas_per_icp=num_personas_per_icp,
+                    on_progress=make_progress_cb(jid),
+                )
+                res = await pipeline.run(data)
+                await session.commit()
+
+                _LOCAL_JOBS[jid]["state"] = "SUCCESS"
+                _LOCAL_JOBS[jid]["progress"] = 100
+                _LOCAL_JOBS[jid]["result"] = res.to_dict()
+                _LOCAL_JOBS[jid]["status_msg"] = "Done"
+                if not _LOCAL_JOBS[jid]["company_id"] and res.company_id:
+                    _LOCAL_JOBS[jid]["company_id"] = str(res.company_id)
+        except Exception as e:
+            _LOCAL_JOBS[jid]["state"] = "FAILURE"
+            _LOCAL_JOBS[jid]["error"] = str(e)
+            _LOCAL_JOBS[jid]["status_msg"] = "Failed"
+            logger.error(f"Fallback pipeline failed: {e}")
+
+    # Fire background task
+    background_tasks.add_task(background_runner, job_id, payload)
 
     return {
         "job_id": job_id,
@@ -112,6 +146,8 @@ async def run_pipeline_async(
         "poll_url": f"/api/v1/pipeline/status/{job_id}",
         "message": "Pipeline submitted. Poll poll_url for updates.",
     }
+
+
 
 
 @router.get(
@@ -125,16 +161,21 @@ async def pipeline_status(job_id: str) -> dict:
         local_job = _LOCAL_JOBS[job_id]
         state = local_job["state"]
         response: dict = {"job_id": job_id, "state": state}
-        
+
         if state == "SUCCESS":
             response["result_url"] = f"/api/v1/pipeline/result/{job_id}"
             response["message"] = "Pipeline complete. Fetch result at result_url."
+            response["progress"] = 100
+            if local_job.get("company_id"):
+                response["company_id"] = local_job["company_id"]
         elif state == "FAILURE":
             response["error"] = local_job.get("error")
         else:
-            response["progress"] = local_job.get("progress", 0)
-            response["status_msg"] = local_job.get("status", "Processing...")
-            
+            response["progress"] = local_job.get("progress", 2)
+            response["status_msg"] = local_job.get("status_msg", "Processing...")
+            if local_job.get("company_id"):
+                response["company_id"] = local_job["company_id"]
+
         return response
 
     # Fallback to celery logic
