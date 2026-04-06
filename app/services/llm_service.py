@@ -63,6 +63,7 @@ class LLMService:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "top_p": 0.8,
         }
 
         # JSON mode handling — Ollama supports it via the API BUT requires the

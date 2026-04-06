@@ -14,6 +14,14 @@ so they are directly importable — no sys.path manipulation needed.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Add project root to sys.path so Celery worker can find top-level modules
+project_root = str(Path(__file__).parent.parent.parent.resolve())
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from typing import Any
 
 from scraper import Scraper, ScrapeResult

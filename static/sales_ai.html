@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Agentic AI | Workflow Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/sales_ai.css">
+</head>
+
+<body>
+    <aside class="sidebar">
+        <div class="logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg>
+            <span>Sales AI</span>
+        </div>
+        <nav class="nav-section">
+            <a href="#" class="nav-item active">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+                Dashboard
+            </a>
+            <a href="/docs" target="_blank" class="nav-item">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+                API Docs
+            </a>
+            <a href="/" class="nav-item">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                Scraper UI
+            </a>
+            <a href="http://localhost:5555" target="_blank" class="nav-item">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M2 20h20M5 20V8l7-4 7 4v12M9 20v-4h6v4"></path>
+                </svg>
+                Celery Flower
+            </a>
+        </nav>
+    </aside>
+
+    <main class="main-content">
+        <header class="header">
+            <div class="header-title">
+                <h1>Sales Intelligence Dashboard</h1>
+                <p>Run end-to-end B2B sales reasoning with 8 specialized agents</p>
+            </div>
+            <div id="jobIdDisplay" class="status-pill">System: <span id="stateDisplay">IDLE</span></div>
+        </header>
+
+        <section class="card animate-fade">
+            <h2 class="card-title">Launch Pipeline</h2>
+            <div class="form-grid">
+                <div class="form-group full-width">
+                    <label class="form-label">Company Name *</label>
+                    <input type="text" id="companyName" placeholder="e.g. Stripe, OpenAI, Snowflake" required>
+                </div>
+                <div class="form-group full-width">
+                    <label class="form-label">Product Description *</label>
+                    <textarea id="productDescription" style="min-height: 80px;"
+                        placeholder="What does this company do? (internal target company details)"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Industry *</label>
+                    <input type="text" id="industry" placeholder="e.g. FinTech, B2B SaaS" value="B2B SaaS">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Geography *</label>
+                    <input type="text" id="geography" placeholder="e.g. North America, Global" value="Global">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Pricing Model *</label>
+                    <select id="pricingModel">
+                        <option value="subscription">Subscription (SaaS)</option>
+                        <option value="freemium">Freemium</option>
+                        <option value="usage_based">Usage-based</option>
+                        <option value="enterprise">Enterprise (Custom)</option>
+                        <option value="one_time">One-time Purchase</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Customer Type *</label>
+                    <select id="customerType">
+                        <option value="B2B">B2B</option>
+                        <option value="B2C">B2C</option>
+                        <option value="B2B2C">B2B2C</option>
+                        <option value="Government">Government</option>
+                        <option value="Marketplace">Marketplace</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label class="form-label">Core Problem Solved *</label>
+                    <input type="text" id="coreProblem"
+                        placeholder="What specific pain point do they solve for buyers?">
+                </div>
+                <div class="form-group full-width">
+                    <label class="form-label">Website (Optional)</label>
+                    <input type="url" id="website" placeholder="https://example.com">
+                </div>
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; align-items: center; gap: 1rem;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="syncMode">
+                    <span style="font-size: 0.9rem; color: var(--text-muted)">Synchronous Mode (Blocking)</span>
+                </label>
+                <button onclick="fillDemoData()" class="btn"
+                    style="background: rgba(88, 166, 255, 0.1); border: 1px solid var(--border); font-size: 0.8rem; padding: 4px 12px; margin-left: auto;">
+                    Fill Mock Data
+                </button>
+            </div>
+
+            <button id="startBtn" onclick="startPipeline()" class="btn btn-primary"
+                style="margin-top: 2rem; width: 100%;">
+                Execute Workflow
+            </button>
+        </section>
+
+        <!-- Progress View -->
+        <section class="card animate-fade">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 class="card-title">Live Pipeline Progress</h2>
+                <span id="progressText" style="font-weight: 800; color: var(--primary);">0%</span>
+            </div>
+            <div class="progress-container">
+                <div id="progressBar" class="progress-bar"></div>
+            </div>
+
+            <div id="stepsTimeline" class="steps-timeline">
+                <!-- Injected via JS -->
+            </div>
+        </section>
+
+        <!-- Final Result Area -->
+        <div id="finalResult" style="display: none;">
+            <!-- Rendered by JS -->
+        </div>
+    </main>
+
+    <script src="/static/sales_ai.js"></script>
+</body>
+
+</html>

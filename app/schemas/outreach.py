@@ -17,7 +17,7 @@ class OutreachAsset(BaseModel):
     subject: str = ""  # for email
     body: str
     call_to_action: str = ""
-    personalization_tokens: dict[str, str] = Field(default_factory=dict)
+    personalization_tokens: dict[str, Any] = Field(default_factory=dict)
 
 
 class OutreachGenerateRequest(BaseModel):

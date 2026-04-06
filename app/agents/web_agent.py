@@ -57,6 +57,17 @@ class WebAgent:
 
         raw = await self._scraper.scrape_competitor_homepage(website)
 
+        if not raw.get("scrape_success") and "404" in raw.get("error", ""):
+            from urllib.parse import urlparse
+            parsed = urlparse(website)
+            if parsed.path and parsed.path != "/":
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
+                logger.info(
+                    "web_agent.fallback", original=website, fallback=base_url
+                )
+                raw = await self._scraper.scrape_competitor_homepage(base_url)
+                website = base_url
+
         if not raw.get("scrape_success"):
             return CompetitorWebData(
                 competitor_id=comp.competitor_id,

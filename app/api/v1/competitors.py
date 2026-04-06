@@ -72,8 +72,11 @@ async def get_competitors(company_id: uuid.UUID, db: DbSession) -> dict:
                 "name": r.name,
                 "website": r.website,
                 "category": r.category,
+                "positioning": r.positioning,
                 "relevance_score": r.relevance_score,
                 "has_web_data": r.web_data is not None,
+                "has_clean_data": r.clean_data is not None,
+                "created_at": r.created_at.isoformat(),
             }
             for r in records
         ],

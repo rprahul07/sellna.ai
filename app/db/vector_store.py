@@ -111,15 +111,15 @@ class QdrantVectorStore(VectorStore):
         score_threshold: float = 0.0,
     ) -> list[VectorSearchResult]:
         await self._ensure_collection(collection)
-        hits = await self._client.search(
+        hits = await self._client.query_points(
             collection_name=collection,
-            query_vector=query_embedding,
+            query=query_embedding,
             limit=top_k,
             score_threshold=score_threshold,
         )
         return [
             VectorSearchResult(id=str(hit.id), score=hit.score, payload=hit.payload or {})
-            for hit in hits
+            for hit in hits.points
         ]
 
     async def delete(self, collection: str, doc_id: str) -> None:

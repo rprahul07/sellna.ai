@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -43,10 +44,49 @@ async def get_performance(company_id: uuid.UUID, db: DbSession) -> dict:
         stats["avg_reply_rate"] = round(stats.pop("reply_rate") / n, 3)
         stats["avg_conversion_rate"] = round(stats.pop("conversion_rate") / n, 3)
 
+    # Simple weekly time series for the last 6 weeks based on asset creation time.
+    now = datetime.now(timezone.utc)
+    # Align to week boundaries (Monday)
+    start = (now - timedelta(weeks=5)).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = start - timedelta(days=start.weekday())
+    buckets: dict[str, dict] = {}
+    for i in range(6):
+        wk = (start + timedelta(weeks=i)).date().isoformat()
+        buckets[wk] = {"week_start": wk, "assets": 0, "avg_open_rate": 0.0, "avg_reply_rate": 0.0, "avg_conversion_rate": 0.0}
+
+    # Sum then average per bucket.
+    sums: dict[str, dict] = {k: {"assets": 0, "open": 0.0, "reply": 0.0, "conv": 0.0} for k in buckets.keys()}
+    for r in records:
+        created = r.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        wk_start = created.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=created.weekday())
+        wk_key = wk_start.date().isoformat()
+        if wk_key not in sums:
+            continue
+        sums[wk_key]["assets"] += 1
+        sums[wk_key]["open"] += r.open_rate
+        sums[wk_key]["reply"] += r.reply_rate
+        sums[wk_key]["conv"] += r.conversion_rate
+
+    weekly: list[dict] = []
+    for wk, agg in sorted(sums.items(), key=lambda kv: kv[0]):
+        n = agg["assets"]
+        weekly.append(
+            {
+                "week_start": wk,
+                "assets": n,
+                "avg_open_rate": round((agg["open"] / n), 3) if n else 0.0,
+                "avg_reply_rate": round((agg["reply"] / n), 3) if n else 0.0,
+                "avg_conversion_rate": round((agg["conv"] / n), 3) if n else 0.0,
+            }
+        )
+
     return {
         "company_id": str(company_id),
         "total_assets": len(records),
         "by_channel": by_channel,
+        "weekly": weekly,
     }
 
 

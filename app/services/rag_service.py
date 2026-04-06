@@ -110,7 +110,8 @@ class RAGService:
                 "role": "user",
                 "content": (
                     f"Context:\n{context}\n\n"
-                    f"Question: {question}"
+                    f"Task:\nIdentify the key insights relevant to:\n{question}\n\n"
+                    f"Return concise JSON."
                 ),
             },
         ]

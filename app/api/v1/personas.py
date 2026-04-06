@@ -39,6 +39,10 @@ async def generate_personas(payload: PersonaGenerateRequest, db: DbSession) -> d
         raise HTTPException(status_code=404, detail="No ICPs found. Run /icp/generate first.")
 
     icps = [ICPProfile(**r.profile_data) for r in icp_records]
+    if payload.icp_id:
+        icps = [i for i in icps if str(i.icp_id) == str(payload.icp_id)]
+        if not icps:
+            raise HTTPException(status_code=404, detail="Requested ICP not found for company")
 
     # Generate personas
     personas = await PersonaAgent().run(

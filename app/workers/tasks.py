@@ -42,15 +42,15 @@ def _get_session() -> AsyncSession:
     name="sales_ai.run_pipeline",
     bind=True,
     max_retries=1,
-    soft_time_limit=600,   # 10 min soft kill → task receives SoftTimeLimitExceeded
-    time_limit=660,        # 11 min hard kill
+    soft_time_limit=3600,  # 60 min soft kill
+    time_limit=3800,       # hard kill
 )
 def run_pipeline_task(
     self,
     company_input_dict: dict,
     render_js: bool = False,
-    num_icps: int = 3,
-    num_personas_per_icp: int = 2,
+    num_icps: int = 1,
+    num_personas_per_icp: int = 1,
 ) -> dict:
     """Run the full Sales AI pipeline as a background Celery task.
 
@@ -65,15 +65,30 @@ def run_pipeline_task(
     self.update_state(state="RUNNING", meta={"status": "Pipeline started", "progress": 0})
 
     async def _run():
+        def on_prog(status, progress, company_id=None):
+            logger.info("pipeline.progress", status=status, progress=progress, company_id=company_id)
+            meta = {"status": status, "progress": progress}
+            if company_id:
+                meta["company_id"] = company_id
+            self.update_state(state="RUNNING", meta=meta)
+
         async with _get_session() as session:
-            payload = CompanyInput(**company_input_dict)
-            pipeline = SalesPipeline(
-                db=session,
-                render_js=render_js,
-                num_icps=num_icps,
-                num_personas_per_icp=num_personas_per_icp,
-            )
-            return await pipeline.run(payload)
+            try:
+                payload = CompanyInput(**company_input_dict)
+                pipeline = SalesPipeline(
+                    db=session,
+                    render_js=render_js,
+                    num_icps=num_icps,
+                    num_personas_per_icp=num_personas_per_icp,
+                    on_progress=on_prog,
+                )
+                res = await pipeline.run(payload)
+                await session.commit()
+                return res
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Pipeline DB session failed: {e}")
+                raise
 
     try:
         result = asyncio.run(_run())
@@ -103,8 +118,8 @@ def run_pipeline_task(
     name="sales_ai.run_outreach",
     bind=True,
     max_retries=2,
-    soft_time_limit=120,
-    time_limit=150,
+    soft_time_limit=1800,
+    time_limit=2000,
 )
 def run_outreach_task(
     self,

@@ -83,13 +83,12 @@ class OutreachAgent:
             chunks = await self._rag.retrieve(rag_collection, query, top_k=3)
             rag_context = "\n\nCompetitor intelligence context:\n" + "\n".join(chunks)
 
-        assets: list[OutreachAsset] = []
-        for channel in channels:
-            asset = await self._generate_for_channel(
-                persona, analysis, channel, rag_context
-            )
-            if asset:
-                assets.append(asset)
+        tasks = [
+            self._generate_for_channel(persona, analysis, channel, rag_context)
+            for channel in channels
+        ]
+        results = await asyncio.gather(*tasks)
+        assets: list[OutreachAsset] = [a for a in results if a is not None]
 
         elapsed = time.perf_counter() - t0
         logger.info(
@@ -110,8 +109,25 @@ class OutreachAgent:
         channel_instruction = _CHANNEL_PROMPTS.get(channel, _CHANNEL_PROMPTS["cold_email"])
         prompt = self._build_prompt(persona, analysis, channel_instruction, rag_context)
 
+        _SYSTEM_PROMPT = """You are a fast analytical engine inside a B2B sales intelligence pipeline.
+Your job is to extract only the most important insights from the provided context.
+Strict rules:
+Use ONLY the information present in the context.
+Do NOT explain reasoning.
+Do NOT restate the context.
+Extract the minimal information needed to answer the question.
+Keep the response extremely concise.
+Maximum output length: 120 words.
+Focus only on actionable insights.
+Ignore irrelevant competitor information.
+If the answer is not clearly supported by the context, return:
+{"result": "insufficient_context"}
+Return the output as valid JSON only.
+Do not perform step-by-step reasoning.
+Extract answers directly."""
+
         messages = [
-            {"role": "system", "content": "You are an expert B2B copywriter. Respond with ONLY valid JSON."},
+            {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
 
@@ -125,7 +141,10 @@ class OutreachAgent:
                 subject=data.get("subject", ""),
                 body=data.get("body", ""),
                 call_to_action=data.get("call_to_action", ""),
-                personalization_tokens=data.get("personalization_tokens", {}),
+                personalization_tokens={
+                    str(k): (v if isinstance(v, (str, int, float, bool)) else json.dumps(v))
+                    for k, v in data.get("personalization_tokens", {}).items()
+                } if isinstance(data.get("personalization_tokens"), dict) else {},
             )
         except Exception as e:
             logger.warning("outreach_agent.channel_error", channel=channel, error=str(e))

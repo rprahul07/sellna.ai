@@ -136,7 +136,6 @@ class Scraper:
                     continue
                 return result
             except Exception as exc:
-                traceback.print_exc()
                 last_error = f"{type(exc).__name__}: {exc}"
                 if attempt < retry_times:
                     backoff = (2 ** attempt) + random.uniform(0, 1)

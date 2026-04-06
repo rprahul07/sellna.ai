@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24  # 24 hours
 
     # Comma-separated list of allowed CORS origins
-    cors_origins: str = "http://localhost:3000,http://localhost:8000"
+    cors_origins: str = "http://localhost:3000,http://localhost:8000,http://localhost:8080,http://127.0.0.1:8080"
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -103,8 +103,8 @@ class Settings(BaseSettings):
     custom_model: str = ""
 
     # --- Shared LLM settings ---
-    llm_temperature: float = 0.3
-    llm_max_tokens: int = 2048
+    llm_temperature: float = 0.2
+    llm_max_tokens: int = 400
 
     @property
     def llm_model(self) -> str:

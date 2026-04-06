@@ -23,8 +23,24 @@ from app.services.llm_service import get_llm_service
 logger = get_logger(__name__)
 _settings = get_settings()
 
-_SYSTEM_PROMPT = """You are an expert B2B market analyst and sales strategist.
-Analyze the provided company details and return a structured JSON object with:
+_SYSTEM_PROMPT = """You are a fast analytical engine inside a B2B sales intelligence pipeline.
+Your job is to extract only the most important insights from the provided context.
+Strict rules:
+Use ONLY the information present in the context.
+Do NOT explain reasoning.
+Do NOT restate the context.
+Extract the minimal information needed to answer the question.
+Keep the response extremely concise.
+Maximum output length: 120 words.
+Focus only on actionable insights.
+Ignore irrelevant competitor information.
+If the answer is not clearly supported by the context, return:
+{"result": "insufficient_context"}
+Return the output as valid JSON only.
+Do not perform step-by-step reasoning.
+Extract answers directly.
+
+Return a structured JSON object with:
 {
   "market_type": one of ["horizontal", "vertical", "niche", "enterprise"],
   "target_segments": [list of 3-5 specific market segments],
@@ -35,7 +51,7 @@ Analyze the provided company details and return a structured JSON object with:
   "strengths": [list of 3-5 product strengths],
   "weaknesses": [list of 2-3 potential weaknesses or gaps]
 }
-Respond with ONLY valid JSON. No markdown, no explanation."""
+Respond with ONLY valid JSON."""
 
 
 class DomainAgent:

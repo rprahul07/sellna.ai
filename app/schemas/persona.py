@@ -25,6 +25,6 @@ class BuyerPersona(BaseModel):
 
 
 class PersonaGenerateRequest(BaseModel):
-    icp_id: UUID
+    icp_id: UUID | None = None
     company_id: UUID
     num_personas: int = Field(default=2, ge=1, le=5)

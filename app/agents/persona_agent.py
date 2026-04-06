@@ -8,8 +8,7 @@ Takes ICPs and generates detailed buyer personas with:
 Uses RAG to incorporate competitor messaging weaknesses into persona design.
 """
 
-from __future__ import annotations
-
+import asyncio
 import json
 import time
 from uuid import UUID
@@ -23,7 +22,23 @@ from app.services.rag_service import RAGService
 
 logger = get_logger(__name__)
 
-_SYSTEM_PROMPT = """You are an expert sales psychologist and buyer persona specialist.
+_SYSTEM_PROMPT = """You are a fast analytical engine inside a B2B sales intelligence pipeline.
+Your job is to extract only the most important insights from the provided context.
+Strict rules:
+Use ONLY the information present in the context.
+Do NOT explain reasoning.
+Do NOT restate the context.
+Extract the minimal information needed to answer the question.
+Keep the response extremely concise.
+Maximum output length: 120 words.
+Focus only on actionable insights.
+Ignore irrelevant competitor information.
+If the answer is not clearly supported by the context, return:
+{"result": "insufficient_context"}
+Return the output as valid JSON only.
+Do not perform step-by-step reasoning.
+Extract answers directly.
+
 Create detailed buyer personas for each ICP and return JSON:
 {
   "personas": [
@@ -66,29 +81,55 @@ class PersonaAgent:
         )
 
         all_personas: list[BuyerPersona] = []
-
+        tasks = []
         for icp in icps:
-            # Optionally enrich prompt with RAG context
-            rag_context = ""
-            if rag_collection:
-                query = f"buyer personas for {icp.industry} {icp.buyer_authority}"
-                rag_context = "\n\nRelevant context from competitor intelligence:\n" + "\n".join(
-                    await self._rag.retrieve(rag_collection, query, top_k=3)
-                )
+            tasks.append(self._generate_for_icp(company_analysis, icp, num_personas_per_icp, rag_collection))
 
-            prompt = self._build_prompt(company_analysis, icp, num_personas_per_icp, rag_context)
-            messages = [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ]
+        results = await asyncio.gather(*tasks)
+        for persona_list in results:
+            all_personas.extend(persona_list)
+
+        elapsed = time.perf_counter() - t0
+        logger.info(
+            "persona_agent.complete",
+            module_name="PersonaAgent",
+            execution_time=round(elapsed, 3),
+            output_summary=f"personas={len(all_personas)}",
+        )
+        return all_personas
+
+    async def _get_rag_context(self, icp: ICPProfile, rag_collection: str) -> str:
+        query = f"buyer personas for {icp.industry} {icp.buyer_authority}"
+        results = await self._rag.retrieve(rag_collection, query, top_k=3)
+        return "\n\nRelevant context from competitor intelligence:\n" + "\n".join(results)
+
+    async def _generate_for_icp(
+        self,
+        analysis: CompanyAnalysis,
+        icp: ICPProfile,
+        n: int,
+        rag_collection: str | None,
+    ) -> list[BuyerPersona]:
+        rag_context = ""
+        if rag_collection:
+            rag_context = await self._get_rag_context(icp, rag_collection)
+
+        prompt = self._build_prompt(analysis, icp, n, rag_context)
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+        
+        try:
             raw = await self._llm.chat(messages, json_mode=True, temperature=0.4)
             data = json.loads(raw)
-
+            
+            personas = []
             for item in data.get("personas", []):
                 try:
                     persona = BuyerPersona(
                         icp_id=icp.icp_id,
-                        company_id=company_analysis.company_id,
+                        company_id=analysis.company_id,
                         title=item.get("title", ""),
                         seniority=item.get("seniority", "Director"),
                         goals=item.get("goals", []),
@@ -99,18 +140,13 @@ class PersonaAgent:
                         messaging_tone=item.get("messaging_tone", "professional"),
                         content_preferences=item.get("content_preferences", []),
                     )
-                    all_personas.append(persona)
+                    personas.append(persona)
                 except Exception as e:
                     logger.warning("persona_agent.parse_error", error=str(e))
-
-        elapsed = time.perf_counter() - t0
-        logger.info(
-            "persona_agent.complete",
-            module_name="PersonaAgent",
-            execution_time=round(elapsed, 3),
-            output_summary=f"personas={len(all_personas)}",
-        )
-        return all_personas
+            return personas
+        except Exception as e:
+            logger.error("persona_agent.generate_error", error=str(e))
+            return []
 
     @staticmethod
     def _build_prompt(

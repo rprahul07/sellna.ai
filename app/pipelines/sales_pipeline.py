@@ -30,6 +30,7 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import Callable, Optional
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -110,14 +111,17 @@ class SalesPipeline:
         db: AsyncSession,
         proxy: str | None = None,
         render_js: bool = False,
-        num_icps: int = 3,
-        num_personas_per_icp: int = 2,
+        num_icps: int = 1,
+        num_personas_per_icp: int = 1,
+        on_progress: Callable | None = None,
     ) -> None:
         self._db = db
         self._proxy = proxy
         self._render_js = render_js
         self._num_icps = num_icps
         self._num_personas = num_personas_per_icp
+        self._on_progress = on_progress
+        self._company_id: UUID | None = None
 
     async def run(self, company_input: CompanyInput) -> PipelineResult:
         """Execute the full sales intelligence pipeline."""
@@ -132,7 +136,6 @@ class SalesPipeline:
 
         # ------------------------------------------------------------------
         # Stage 1: Domain Intelligence
-        # ------------------------------------------------------------------
         company_analysis = await self._run_stage(
             "domain_intelligence",
             DomainAgent().run,
@@ -147,7 +150,7 @@ class SalesPipeline:
                 duration_seconds=time.perf_counter() - t0,
             )
 
-        company_id = company_analysis.company_id
+        company_id = getattr(company_analysis, "company_id", None)
 
         # Persist company
         repo = CompanyRepository(self._db)
@@ -157,6 +160,10 @@ class SalesPipeline:
             input_data=company_input.model_dump(mode="json"),
         )
         await repo.update_analysis(company_record.id, company_analysis.model_dump(mode="json"))
+        await self._db.commit()
+        self._company_id = company_record.id
+        if self._on_progress:
+            self._on_progress(status="Company analyzed", progress=self._get_stage_progress("domain_intelligence"), company_id=str(self._company_id))
 
         # ------------------------------------------------------------------
         # Stage 2: Competitor Discovery
@@ -184,17 +191,27 @@ class SalesPipeline:
                     for c in competitors
                 ],
             )
+            await self._db.commit()
 
-        # ------------------------------------------------------------------
         # Stage 3: Web Intelligence (scrapping_module integration)
         # ------------------------------------------------------------------
-        web_data: list[CompetitorWebData] = await self._run_stage(
-            "web_intelligence",
-            WebAgent(proxy=self._proxy, render_js=self._render_js).run,
-            competitors,
-            errors,
-        ) or []
-
+        web_agent = WebAgent(proxy=self._proxy, render_js=self._render_js)
+        web_data: list[CompetitorWebData] = []
+        
+        if competitors:
+            logger.info("pipeline.web_intel.start", count=len(competitors))
+            tasks = [web_agent._scrape_one(c) for c in competitors]
+            for future in asyncio.as_completed(tasks):
+                try:
+                    wd = await future
+                    web_data.append(wd)
+                    await comp_repo.update_web_data(wd.competitor_id, wd.model_dump(mode="json"))
+                    await self._db.commit()
+                    if self._on_progress:
+                        self._on_progress(status=f"Scraped {wd.website}", progress=self._get_stage_progress("web_intelligence"), company_id=str(self._company_id))
+                except Exception as e:
+                    logger.error("pipeline.web_intel.error", error=str(e))
+                    errors.append(f"Scrape failed: {e}")
         # ------------------------------------------------------------------
         # Stage 4: Data Cleaning
         # ------------------------------------------------------------------
@@ -204,6 +221,11 @@ class SalesPipeline:
             web_data,
             errors,
         ) or []
+
+        # Persist clean data
+        for cd in clean_data:
+            await comp_repo.update_clean_data(cd.competitor_id, cd.model_dump(mode="json"))
+        await self._db.commit()
 
         # ------------------------------------------------------------------
         # Stage 5: Gap Analysis (RAG)
@@ -225,6 +247,7 @@ class SalesPipeline:
                 gap_data=gap.model_dump(mode="json"),
                 confidence=gap.confidence_score,
             )
+        await self._db.commit()
 
         # ------------------------------------------------------------------
         # Stage 6: ICP Generation
@@ -244,33 +267,41 @@ class SalesPipeline:
                 company_id=company_record.id,
                 profile_data=icp.model_dump(mode="json"),
             )
+        await self._db.commit()
 
-        # ------------------------------------------------------------------
         # Stage 7: Persona Generation (RAG-enriched)
         # ------------------------------------------------------------------
         rag_collection = f"gap_{company_id}"
-        personas: list[BuyerPersona] = await self._run_stage(
-            "persona_generation",
-            lambda: PersonaAgent().run(
-                company_analysis, icps, self._num_personas, rag_collection=rag_collection
-            ),
-            None,
-            errors,
-            no_arg=True,
-        ) or []
-
-        # Persist personas
+        persona_agent = PersonaAgent()
         persona_repo = PersonaRepository(self._db)
-        for p in personas:
-            await persona_repo.create(
-                icp_id=p.icp_id,
-                company_id=company_record.id,
-                persona_data=p.model_dump(mode="json"),
-            )
+        personas: list[BuyerPersona] = []
+        
+        if icps:
+            logger.info("pipeline.persona_gen.start", count=len(icps))
+            persona_tasks = [persona_agent._generate_for_icp(company_analysis, icp, self._num_personas, rag_collection) for icp in icps]
+            for future in asyncio.as_completed(persona_tasks):
+                try:
+                    p_list = await future
+                    for p in p_list:
+                        personas.append(p)
+                        await persona_repo.create(
+                            icp_id=p.icp_id,
+                            company_id=company_record.id,
+                            persona_data=p.model_dump(mode="json"),
+                        )
+                    await self._db.commit()
+                    if self._on_progress:
+                        self._on_progress(status=f"Generated {len(p_list)} personas", progress=self._get_stage_progress("persona_generation"), company_id=str(self._company_id))
+                except Exception as e:
+                    logger.error("pipeline.persona_gen.error", error=str(e))
+                    errors.append(f"Persona generation failed: {e}")
 
         # ------------------------------------------------------------------
-        # Stage 8: Outreach Generation (RAG-enriched, per persona async)
+        # Stage 8: Outreach Generation (RAG-enriched, parallel per persona)
         # ------------------------------------------------------------------
+        if self._on_progress:
+            self._on_progress(status="Generating outreach assets...", progress=self._get_stage_progress("outreach_generation"), company_id=str(self._company_id))
+
         outreach_assets: list[OutreachAsset] = []
         outreach_agent = OutreachAgent()
         outreach_repo = OutreachRepository(self._db)
@@ -296,7 +327,11 @@ class SalesPipeline:
             if isinstance(batch, list):
                 outreach_assets.extend(batch)
             elif isinstance(batch, Exception):
-                errors.append(f"Outreach error: {batch}")
+                msg = f"Outreach error: {batch}"
+                logger.error("pipeline.outreach.error", error=str(batch))
+                errors.append(msg)
+        
+        await self._db.commit()
 
         # ------------------------------------------------------------------
         # Done
@@ -342,6 +377,14 @@ class SalesPipeline:
         """Run a pipeline stage with timeout, logging, and error recovery."""
         try:
             logger.info("pipeline.stage.start", stage=stage_name)
+            if self._on_progress:
+                pct = self._get_stage_progress(stage_name)
+                self._on_progress(
+                    status=f"Executing {stage_name}...", 
+                    progress=pct,
+                    company_id=str(self._company_id) if self._company_id else None
+                )
+
             t = time.perf_counter()
             if no_arg:
                 result = await asyncio.wait_for(fn(), timeout=_settings.pipeline_timeout_seconds)
@@ -363,3 +406,22 @@ class SalesPipeline:
             logger.error("pipeline.stage.error", stage=stage_name, error=str(exc))
             errors.append(msg)
             return None
+            
+    def _get_stage_progress(self, stage_name: str) -> int:
+        """Map stage name to approximate completion percentage."""
+        stages = [
+            "domain_intelligence",
+            "competitor_discovery",
+            "web_intelligence",
+            "data_cleaning",
+            "gap_analysis",
+            "icp_generation",
+            "persona_generation",
+            "outreach_generation",
+            "optimization"
+        ]
+        try:
+            idx = stages.index(stage_name)
+            return int(((idx + 1) / len(stages)) * 100)
+        except ValueError:
+            return 0

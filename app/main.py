@@ -6,7 +6,8 @@ This is the main application that wires together:
   - Database lifecycle (create tables on startup)
   - All API routers under /api/v1/
   - Prometheus metrics endpoint
-  - OpenAPI docs at /docs
+# OpenAPI docs at /docs
+# Triggering reload for CORS update
 """
 
 from __future__ import annotations
@@ -24,6 +25,9 @@ from app.api.router import api_router
 from app.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.postgres import create_all_tables, dispose_engine
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Bootstrap logging before anything else
@@ -146,6 +150,21 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # ---------------------------------------------------------------------------
 
 app.include_router(api_router, prefix="/api/v1")
+
+# ---------------------------------------------------------------------------
+# Sales AI Dashboard (Frontend)
+# ---------------------------------------------------------------------------
+
+STATIC_DIR = Path(__file__).parent.parent / "static"
+
+# Mount static files (css, js, images)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/dashboard", tags=["Dashboard"])
+async def dashboard():
+    """Navigate here to run the full workflow with a premium UI."""
+    return FileResponse(STATIC_DIR / "sales_ai.html")
 
 
 # ---------------------------------------------------------------------------

@@ -89,5 +89,18 @@ async def get_outreach(company_id: uuid.UUID, db: DbSession) -> dict:
     return {
         "company_id": str(company_id),
         "total": len(records),
-        "assets": [r.content for r in records],
+        "assets": [
+            {
+                "id": str(r.id),
+                "persona_id": str(r.persona_id),
+                "company_id": str(r.company_id),
+                "channel": r.channel,
+                "content": r.content,
+                "open_rate": r.open_rate,
+                "reply_rate": r.reply_rate,
+                "conversion_rate": r.conversion_rate,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in records
+        ],
     }

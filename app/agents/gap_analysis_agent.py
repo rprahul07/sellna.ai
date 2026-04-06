@@ -26,8 +26,23 @@ from app.services.rag_service import RAGService
 
 logger = get_logger(__name__)
 
-_SYSTEM_GAP = """You are a senior product strategist and competitive intelligence expert.
-Based on the competitor landscape and company context provided, identify strategic market gaps.
+_SYSTEM_GAP = """You are a fast analytical engine inside a B2B sales intelligence pipeline.
+Your job is to extract only the most important insights from the provided context.
+Strict rules:
+Use ONLY the information present in the context.
+Do NOT explain reasoning.
+Do NOT restate the context.
+Extract the minimal information needed to answer the question.
+Keep the response extremely concise.
+Maximum output length: 120 words.
+Focus only on actionable insights.
+Ignore irrelevant competitor information.
+If the answer is not clearly supported by the context, return:
+{"result": "insufficient_context"}
+Return the output as valid JSON only.
+Do not perform step-by-step reasoning.
+Extract answers directly.
+
 Return a JSON object:
 {
   "gaps": [
@@ -41,7 +56,7 @@ Return a JSON object:
     }
   ]
 }
-Identify 4-8 gaps. Respond with ONLY valid JSON."""
+Identify 2-4 gaps. Respond with ONLY valid JSON."""
 
 
 class GapAnalysisAgent:
@@ -67,12 +82,15 @@ class GapAnalysisAgent:
             input_summary=f"competitor_docs={len(clean_data_list)}",
         )
 
-        # Index competitor documents into vector store
-        documents = [
-            cd.normalized_text
-            for cd in clean_data_list
-            if cd.normalized_text.strip()
-        ]
+        # Index competitor documents into vector store (Chunked for latency)
+        documents = []
+        for cd in clean_data_list:
+            text = cd.normalized_text.strip()
+            if not text:
+                continue
+            chunk_size = 2500
+            for i in range(0, len(text), chunk_size):
+                documents.append(text[i : i + chunk_size + 200])
         if documents:
             await self._rag.index_documents(collection, documents)
 
@@ -81,7 +99,7 @@ class GapAnalysisAgent:
 
         # RAG query for each gap type
         gap_query = (
-            f"What features, segments, and messaging angles are missing from the market? "
+            f"What features, segments, and messaging angles are missing from the market?\n"
             f"Company context: {company_context}"
         )
 
@@ -89,7 +107,7 @@ class GapAnalysisAgent:
             collection=collection,
             question=gap_query,
             system_prompt=_SYSTEM_GAP,
-            top_k=6,
+            top_k=3,
             json_mode=True,
         )
 
