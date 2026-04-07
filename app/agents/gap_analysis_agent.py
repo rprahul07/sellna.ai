@@ -91,7 +91,9 @@ class GapAnalysisAgent:
             chunk_size = 2500
             for i in range(0, len(text), chunk_size):
                 documents.append(text[i : i + chunk_size + 200])
-        if documents:
+        if not documents:
+            logger.warning("gap_analysis_agent.no_competitors", message="No competitor data to index. Using domain knowledge as fallback.")
+        else:
             await self._rag.index_documents(collection, documents)
 
         # Build company context
@@ -99,19 +101,35 @@ class GapAnalysisAgent:
 
         # RAG query for each gap type
         gap_query = (
-            f"What features, segments, and messaging angles are missing from the market?\n"
-            f"Company context: {company_context}"
+            f"Identify 2-4 specific market gaps (missing features, underserved segments, or messaging weaknesses) "
+            f"where this company could successfully compete.\n"
+            f"Company profile: {company_context}"
         )
 
-        raw = await self._rag.query(
-            collection=collection,
-            question=gap_query,
-            system_prompt=_SYSTEM_GAP,
-            top_k=3,
-            json_mode=True,
-        )
+        try:
+            raw = await self._rag.query(
+                collection=collection,
+                question=gap_query,
+                system_prompt=_SYSTEM_GAP,
+                top_k=3,
+                json_mode=True,
+            )
+            data = json.loads(raw)
+        except Exception as e:
+            logger.warning("gap_analysis_agent.rag_failed", error=str(e))
+            data = {"gaps": []}
 
-        data = json.loads(raw)
+        # Fallback: if no gaps found via RAG, generate them based on company strengths
+        if not data.get("gaps"):
+            logger.info("gap_analysis_agent.fallback_mode")
+            fallback_prompt = (
+                f"Based on this company profile, suggest 3 high-level market gaps they are well-positioned to fill.\n"
+                f"Profile: {company_context}\n\n"
+                "Return JSON: {\"gaps\": [{\"gap_type\": \"underserved_segment\", \"description\": \"...\", \"opportunity\": \"...\", \"confidence_score\": 0.7, \"supporting_evidence\": [], \"recommended_action\": \"...\"}]}"
+            )
+            raw = await self._llm.chat([{"role": "system", "content": _SYSTEM_GAP}, {"role": "user", "content": fallback_prompt}], json_mode=True)
+            data = json.loads(raw)
+
         gaps: list[MarketGap] = []
 
         for item in data.get("gaps", []):

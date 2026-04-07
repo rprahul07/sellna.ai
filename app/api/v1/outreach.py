@@ -57,6 +57,7 @@ async def generate_outreach(payload: OutreachGenerateRequest, db: DbSession) -> 
             company_id=payload.company_id,
             channel=a.channel,
             content=a.model_dump(mode="json"),
+            asset_id=a.asset_id,
         )
 
     return {

@@ -78,9 +78,9 @@ class Settings(BaseSettings):
     faiss_index_path: str = "./data/faiss_index"
 
     # ------------------------------------------------------------------
-    # LLM Provider — switch between openai | grok | groq | ollama | custom
+    # LLM Provider — switch between openai | grok | groq | ollama | custom | apifree
     # ------------------------------------------------------------------
-    llm_provider: Literal["openai", "grok", "groq", "ollama", "custom"] = "groq"
+    llm_provider: Literal["openai", "grok", "groq", "ollama", "custom", "apifree"] = "groq"
 
     # --- xAI / Grok ---
     grok_api_key: str = Field(default="", description="xAI API key (format: xai-...)")
@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_model: str = "llama-3.3-70b-versatile"  # fast + capable; alt: mixtral-8x7b-32768
 
+    # --- APIFree (set llm_provider=apifree) ---
+    apifree_api_key: str = Field(default="", description="APIFree API key")
+    apifree_base_url: str = "https://apifreellm.com/api/v1"
+    apifree_model: str = "apifreellm"
+
     # --- Custom / Any other OpenAI-compatible endpoint ---
     custom_base_url: str = ""
     custom_api_key: str = ""
@@ -120,6 +125,7 @@ class Settings(BaseSettings):
             "ollama": self.ollama_model,
             "groq": self.groq_model,
             "custom": self.custom_model,
+            "apifree": self.apifree_model,
         }[self.llm_provider]
 
     @property
@@ -131,6 +137,7 @@ class Settings(BaseSettings):
             "ollama": self.ollama_base_url,
             "groq": self.groq_base_url,
             "custom": self.custom_base_url,
+            "apifree": self.apifree_base_url,
         }[self.llm_provider]
 
     @property
@@ -142,6 +149,7 @@ class Settings(BaseSettings):
             "ollama": self.ollama_api_key,
             "groq": self.groq_api_key,
             "custom": self.custom_api_key,
+            "apifree": self.apifree_api_key,
         }[self.llm_provider]
 
     @model_validator(mode="after")

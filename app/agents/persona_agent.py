@@ -51,7 +51,12 @@ Create detailed buyer personas for each ICP and return JSON:
       "buying_triggers": ["trigger1", "trigger2"],
       "preferred_channels": ["email", "linkedin", "phone"],
       "messaging_tone": "professional | friendly | technical | consultative",
-      "content_preferences": ["case_studies", "whitepapers", "demos"]
+      "content_preferences": ["case_studies", "whitepapers", "demos"],
+      "battlecard": {
+        "winning_strategy": "short high-impact winning strategy",
+        "competitive_hook": "one liner to hook this specific persona",
+        "why_we_win": "one reason we win vs competitors for this buyer"
+      }
     }
   ]
 }
@@ -139,6 +144,7 @@ class PersonaAgent:
                         preferred_channels=item.get("preferred_channels", ["email"]),
                         messaging_tone=item.get("messaging_tone", "professional"),
                         content_preferences=item.get("content_preferences", []),
+                        battlecard=item.get("battlecard", {}),
                     )
                     personas.append(persona)
                 except Exception as e:

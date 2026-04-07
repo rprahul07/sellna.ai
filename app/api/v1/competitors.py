@@ -39,6 +39,7 @@ async def discover_competitors(company_id: uuid.UUID, db: DbSession) -> dict:
         company_id=company_id,
         competitors=[
             {
+                "competitor_id": c.competitor_id,
                 "name": c.name,
                 "website": c.website,
                 "category": c.category,

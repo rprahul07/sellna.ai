@@ -176,10 +176,14 @@ async def get_auth_copy() -> dict:
 async def get_personas_config() -> dict:
     return {
         "sections": [
+            {"key": "seniority", "label": "Seniority", "icon": "Shield", "color": "text-primary", "bg": "bg-primary/[0.06]"},
             {"key": "goals", "label": "Goals", "icon": "Target", "color": "text-success", "bg": "bg-success/[0.06]"},
             {"key": "pain_points", "label": "Pain Points", "icon": "AlertTriangle", "color": "text-warning", "bg": "bg-warning/[0.06]"},
             {"key": "objections", "label": "Objections", "icon": "MessageSquare", "color": "text-destructive", "bg": "bg-destructive/[0.06]"},
             {"key": "buying_triggers", "label": "Buying Triggers", "icon": "Zap", "color": "text-primary", "bg": "bg-primary/[0.06]"},
+            {"key": "preferred_channels", "label": "Preferred Channels", "icon": "Send", "color": "text-info", "bg": "bg-info/[0.06]"},
+            {"key": "content_preferences", "label": "Content Strategy", "icon": "Layers", "color": "text-success", "bg": "bg-success/[0.06]"},
+            {"key": "battlecard", "label": "AI Win Plan", "icon": "Sparkles", "color": "text-primary", "bg": "bg-primary/[0.06]"},
         ]
     }
 

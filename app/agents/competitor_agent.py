@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from uuid import UUID
 
 from app.core.logging import get_logger
@@ -74,23 +75,34 @@ class CompetitorAgent:
             {"role": "user", "content": user_prompt},
         ]
 
-        raw = await self._llm.chat(messages, json_mode=True, temperature=0.3)
-        data = json.loads(raw)
-
         competitors: list[CompetitorDiscovered] = []
-        for item in data.get("competitors", []):
-            try:
-                comp = CompetitorDiscovered(
-                    name=item["name"],
-                    website=item.get("website", ""),
-                    category=item.get("category", "Direct"),
-                    positioning=item.get("positioning", ""),
-                    relevance_score=float(item.get("relevance_score", 0.5)),
-                    discovery_source="llm_reasoning",
-                )
-                competitors.append(comp)
-            except Exception as e:
-                logger.warning("competitor_agent.parse_error", error=str(e), item=item)
+        try:
+            raw = await self._llm.chat(messages, json_mode=True, temperature=0.3)
+            # Handle potential non-JSON prefix/suffix from some models
+            if "{" in raw and "}" in raw:
+                start = raw.find("{")
+                end = raw.rfind("}") + 1
+                raw = raw[start:end]
+            
+            data = json.loads(raw)
+            for item in data.get("competitors", []):
+                try:
+                    comp = CompetitorDiscovered(
+                        competitor_id=uuid.uuid4(),
+                        name=item.get("name", "Unknown Competitor"),
+                        website=item.get("website", ""),
+                        category=item.get("category", "Direct"),
+                        positioning=item.get("positioning", ""),
+                        relevance_score=float(item.get("relevance_score", 0.5)),
+                        discovery_source="llm_reasoning",
+                    )
+                    competitors.append(comp)
+                except Exception as e:
+                    logger.warning("competitor_agent.parse_item_error", error=str(e), item=item)
+        except Exception as e:
+            logger.error("competitor_agent.error", error=str(e))
+            # Fallback — return 0 competitors but don't crash
+            return []
 
         elapsed = time.perf_counter() - t0
         logger.info(

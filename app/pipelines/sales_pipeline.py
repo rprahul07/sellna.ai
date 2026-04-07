@@ -41,6 +41,7 @@ from app.agents import (
     DomainAgent,
     GapAnalysisAgent,
     ICPAgent,
+    OptimizationAgent,
     OutreachAgent,
     PersonaAgent,
     WebAgent,
@@ -59,7 +60,7 @@ from app.schemas.company import CompanyAnalysis, CompanyInput
 from app.schemas.competitor import CompetitorCleanData, CompetitorDiscovered, CompetitorWebData
 from app.schemas.gap_analysis import MarketGap
 from app.schemas.icp import ICPProfile
-from app.schemas.outreach import OutreachAsset
+from app.schemas.outreach import OutreachAsset, OutreachFeedback
 from app.schemas.persona import BuyerPersona
 
 logger = get_logger(__name__)
@@ -150,7 +151,7 @@ class SalesPipeline:
                 duration_seconds=time.perf_counter() - t0,
             )
 
-        company_id = getattr(company_analysis, "company_id", None)
+        company_id = company_analysis.company_id
 
         # Persist company
         repo = CompanyRepository(self._db)
@@ -158,6 +159,7 @@ class SalesPipeline:
             name=company_input.company_name,
             industry=company_input.industry,
             input_data=company_input.model_dump(mode="json"),
+            company_id=company_analysis.company_id,
         )
         await repo.update_analysis(company_record.id, company_analysis.model_dump(mode="json"))
         await self._db.commit()
@@ -182,6 +184,7 @@ class SalesPipeline:
                 company_id=company_record.id,
                 competitors=[
                     {
+                        "competitor_id": c.competitor_id,
                         "name": c.name,
                         "website": c.website,
                         "category": c.category,
@@ -212,6 +215,7 @@ class SalesPipeline:
                 except Exception as e:
                     logger.error("pipeline.web_intel.error", error=str(e))
                     errors.append(f"Scrape failed: {e}")
+                    
         # ------------------------------------------------------------------
         # Stage 4: Data Cleaning
         # ------------------------------------------------------------------
@@ -246,6 +250,7 @@ class SalesPipeline:
                 gap_type=gap.gap_type,
                 gap_data=gap.model_dump(mode="json"),
                 confidence=gap.confidence_score,
+                gap_id=gap.gap_id,
             )
         await self._db.commit()
 
@@ -266,12 +271,13 @@ class SalesPipeline:
             await icp_repo.create(
                 company_id=company_record.id,
                 profile_data=icp.model_dump(mode="json"),
+                icp_id=icp.icp_id,
             )
         await self._db.commit()
 
         # Stage 7: Persona Generation (RAG-enriched)
         # ------------------------------------------------------------------
-        rag_collection = f"gap_{company_id}"
+        rag_collection = f"gap_{str(company_record.id)}"
         persona_agent = PersonaAgent()
         persona_repo = PersonaRepository(self._db)
         personas: list[BuyerPersona] = []
@@ -288,6 +294,7 @@ class SalesPipeline:
                             icp_id=p.icp_id,
                             company_id=company_record.id,
                             persona_data=p.model_dump(mode="json"),
+                            persona_id=p.persona_id,
                         )
                     await self._db.commit()
                     if self._on_progress:
@@ -312,26 +319,60 @@ class SalesPipeline:
                 analysis=company_analysis,
                 rag_collection=rag_collection,
             )
-            for a in assets:
-                await outreach_repo.create(
-                    persona_id=persona.persona_id,
-                    company_id=company_record.id,
-                    channel=a.channel,
-                    content=a.model_dump(mode="json"),
-                )
             return assets
 
         outreach_tasks = [gen_outreach(p) for p in personas]
         outreach_batches = await asyncio.gather(*outreach_tasks, return_exceptions=True)
+        
         for batch in outreach_batches:
             if isinstance(batch, list):
                 outreach_assets.extend(batch)
+                # Sequentially save to DB to avoid SQLAlchemy concurrent flush errors
+                for a in batch:
+                    await outreach_repo.create(
+                        persona_id=a.persona_id,
+                        company_id=company_record.id,
+                        channel=a.channel,
+                        content=a.model_dump(mode="json"),
+                        asset_id=a.asset_id,
+                    )
             elif isinstance(batch, Exception):
                 msg = f"Outreach error: {batch}"
                 logger.error("pipeline.outreach.error", error=str(batch))
                 errors.append(msg)
         
         await self._db.commit()
+
+        # ------------------------------------------------------------------
+        # Stage 9: Optimization (Simulate & Analyze)
+        # ------------------------------------------------------------------
+        if self._on_progress:
+            self._on_progress(status="Seeding initial performance data...", progress=self._get_stage_progress("optimization"), company_id=str(self._company_id))
+
+        await outreach_repo.seed_feedback(company_record.id)
+        await self._db.commit()
+
+        # Run optimization analysis based on seeded data
+        opt_agent = OptimizationAgent()
+        # Mock feedback list for agent ingestion
+        records = await outreach_repo.get_by_company(company_record.id)
+        feedback_list = [
+            OutreachFeedback(
+                asset_id=r.id, 
+                open_rate=r.open_rate, 
+                reply_rate=r.reply_rate, 
+                conversion_rate=r.conversion_rate
+            ) 
+            for r in records
+        ]
+        
+        optimization_result = await self._run_stage(
+            "optimization",
+            lambda: opt_agent.run([OutreachAsset(**r.content, asset_id=r.id, persona_id=r.persona_id, company_id=r.company_id, channel=r.channel) for r in records], feedback_list),
+            None,
+            errors,
+            no_arg=True
+        )
 
         # ------------------------------------------------------------------
         # Done
@@ -350,7 +391,7 @@ class SalesPipeline:
         )
 
         return PipelineResult(
-            company_id=company_id,
+            company_id=self._company_id,
             company_analysis=company_analysis,
             competitors=competitors,
             market_gaps=gaps,

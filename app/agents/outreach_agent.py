@@ -10,6 +10,7 @@ RAG is used to ground messaging in competitor gaps and buyer context.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from uuid import UUID
@@ -83,12 +84,12 @@ class OutreachAgent:
             chunks = await self._rag.retrieve(rag_collection, query, top_k=3)
             rag_context = "\n\nCompetitor intelligence context:\n" + "\n".join(chunks)
 
-        tasks = [
-            self._generate_for_channel(persona, analysis, channel, rag_context)
-            for channel in channels
-        ]
-        results = await asyncio.gather(*tasks)
-        assets: list[OutreachAsset] = [a for a in results if a is not None]
+        # Run sequentially to prevent overwhelming free LLM APIs (503 Service Unavailable)
+        assets: list[OutreachAsset] = []
+        for channel in channels:
+            asset = await self._generate_for_channel(persona, analysis, channel, rag_context)
+            if asset:
+                assets.append(asset)
 
         elapsed = time.perf_counter() - t0
         logger.info(

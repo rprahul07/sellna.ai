@@ -54,6 +54,7 @@ async def generate_icps(payload: ICPGenerateRequest, db: DbSession) -> dict:
             gap_type=gap.gap_type,
             gap_data=gap.model_dump(mode="json"),
             confidence=gap.confidence_score,
+            gap_id=gap.gap_id,
         )
 
     # Generate ICPs
@@ -61,7 +62,7 @@ async def generate_icps(payload: ICPGenerateRequest, db: DbSession) -> dict:
 
     icp_repo = ICPRepository(db)
     for icp in icps:
-        await icp_repo.create(company_id=company_id, profile_data=icp.model_dump(mode="json"))
+        await icp_repo.create(company_id=company_id, profile_data=icp.model_dump(mode="json"), icp_id=icp.icp_id)
 
     return {
         "company_id": str(company_id),

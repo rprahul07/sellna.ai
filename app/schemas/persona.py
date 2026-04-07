@@ -22,6 +22,11 @@ class BuyerPersona(BaseModel):
     preferred_channels: list[str] = Field(default_factory=list)
     messaging_tone: str = "professional"  # professional, friendly, technical
     content_preferences: list[str] = Field(default_factory=list)
+    battlecard: dict[str, str] = Field(default_factory=lambda: {
+        "winning_strategy": "Be consultative and lead with gap analysis.",
+        "competitive_edge": "Focus on our superior RAG-driven context.",
+        "key_hook": "Mention their recent industry pivot.",
+    })
 
 
 class PersonaGenerateRequest(BaseModel):

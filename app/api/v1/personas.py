@@ -58,6 +58,7 @@ async def generate_personas(payload: PersonaGenerateRequest, db: DbSession) -> d
             icp_id=p.icp_id,
             company_id=payload.company_id,
             persona_data=p.model_dump(mode="json"),
+            persona_id=p.persona_id,
         )
 
     return {

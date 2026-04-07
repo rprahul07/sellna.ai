@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -19,6 +20,7 @@ class OutreachAsset(BaseModel):
     call_to_action: str = ""
     personalization_tokens: dict[str, Any] = Field(default_factory=dict)
 
+OutreachAsset.model_rebuild()
 
 class OutreachGenerateRequest(BaseModel):
     persona_id: UUID
